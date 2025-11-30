@@ -17,5 +17,10 @@ type Handler struct {
 func SetupRouter(h *Handler) http.Handler {
 	r := chi.NewRouter()
 
+	// Health check
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("OK"))
+	})
+
 	return r
 }

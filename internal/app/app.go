@@ -10,11 +10,14 @@ import (
 	"syscall"
 
 	"comments-system/internal/config"
+	comments_h "comments-system/internal/http-server/handler/comments"
+	posts_h "comments-system/internal/http-server/handler/posts"
 	"comments-system/internal/http-server/middleware"
 	"comments-system/internal/http-server/router"
+	comments_cache "comments-system/internal/repository/cache/comments/redis"
+	posts_cache "comments-system/internal/repository/cache/posts/redis"
 	comments_postgres "comments-system/internal/repository/comments/postgres"
 	posts_postgres "comments-system/internal/repository/posts/postgres"
-	"comments-system/internal/repository/cache/redis"
 	comments_uc "comments-system/internal/usecase/comments"
 	posts_uc "comments-system/internal/usecase/posts"
 
@@ -43,15 +46,17 @@ func NewApp(cfg *config.Config, logger *zlog.Zerolog) (*App, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	cache := redis.NewRedisCache(cfg, retries)
+	commentsCache := comments_cache.NewCommentsCache(cfg, retries)
+	postsCache := posts_cache.NewPostsCache(cfg, retries)
+
 	commentsRepo := comments_postgres.NewCommentsRepository(db, retries)
 	postsRepo := posts_postgres.NewPostsRepository(db, retries)
 
-	commentsUsecase := usecase.NewCommentsUsecase(..., cache, logger)
-	postsUsecase := usecase.NewPostsUsecase(..., cache, logger)
+	commentsUsecase := comments_uc.NewCommentsUsecase(commentsRepo, commentsCache, logger)
+	postsUsecase := posts_uc.NewPostsUsecase(postsRepo, postsCache, logger)
 
-	commentsHandler := handler.NewCommentsHandler(..., logger)
-	postsHandler := handler.NewPostsHandler(..., logger)
+	commentsHandler := comments_h.NewCommentsHandler(commentsUsecase, logger)
+	postsHandler := posts_h.NewPostsHandler(postsUsecase, logger)
 
 	h := &router.Handler{
 		CommentsHandler: commentsHandler,

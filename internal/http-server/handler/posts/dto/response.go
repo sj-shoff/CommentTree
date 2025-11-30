@@ -6,13 +6,13 @@ import (
 )
 
 type PostResponse struct {
-	ID        int       `json:"id"`
-	Title     string    `json:"title"`
-	Content   string    `json:"content"`
-	Author    string    `json:"author"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Comments  int       `json:"comments_count"`
+	ID            int       `json:"id"`
+	Title         string    `json:"title"`
+	Content       string    `json:"content"`
+	Author        string    `json:"author"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	CommentsCount int       `json:"comments_count"`
 }
 
 type PostsResponse struct {
@@ -26,13 +26,13 @@ type PostsResponse struct {
 
 func FromDomainPost(post domain.Post) PostResponse {
 	return PostResponse{
-		ID:        post.ID,
-		Title:     post.Title,
-		Content:   post.Content,
-		Author:    post.Author,
-		CreatedAt: post.CreatedAt,
-		UpdatedAt: post.UpdatedAt,
-		Comments:  post.CommentsCount,
+		ID:            post.ID,
+		Title:         post.Title,
+		Content:       post.Content,
+		Author:        post.Author,
+		CreatedAt:     post.CreatedAt,
+		UpdatedAt:     post.UpdatedAt,
+		CommentsCount: post.CommentsCount,
 	}
 }
 

@@ -9,11 +9,11 @@ type CreatePostRequest struct {
 }
 
 type GetPostsRequest struct {
-	Page      int
-	PageSize  int
-	Search    string
-	SortBy    string
-	SortOrder string
+	Page      int    `query:"page"`
+	PageSize  int    `query:"page_size"`
+	Search    string `query:"search"`
+	SortBy    string `query:"sort_by"`
+	SortOrder string `query:"sort_order"`
 }
 
 func (r *GetPostsRequest) Validate() error {

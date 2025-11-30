@@ -10,7 +10,7 @@ type CommentsRepository struct {
 	retries retry.Strategy
 }
 
-func NewPostsRepository(db *dbpg.DB, retries retry.Strategy) *CommentsRepository {
+func NewCommentsRepository(db *dbpg.DB, retries retry.Strategy) *CommentsRepository {
 	return &CommentsRepository{
 		db:      db,
 		retries: retries,
