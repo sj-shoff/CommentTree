@@ -46,11 +46,11 @@ func (r *PostsRepository) Create(ctx context.Context, post domain.Post) (domain.
 func (r *PostsRepository) GetAll(ctx context.Context, page, pageSize int, searchQuery, sortBy, sortOrder string) ([]domain.Post, int, error) {
 	where := ""
 	params := []interface{}{}
-	i := 1
+	paramCount := 1
 	if searchQuery != "" {
-		where = fmt.Sprintf("WHERE title ILIKE $%d OR content ILIKE $%d", i, i+1)
+		where = "WHERE title ILIKE $1 OR content ILIKE $2"
 		params = append(params, "%"+searchQuery+"%", "%"+searchQuery+"%")
-		i += 2
+		paramCount += 2
 	}
 
 	countQuery := `SELECT COUNT(*) FROM posts ` + where
@@ -76,7 +76,7 @@ func (r *PostsRepository) GetAll(ctx context.Context, page, pageSize int, search
 		sortDir = "ASC"
 	}
 
-	query := `SELECT id, title, content, author, created_at, updated_at FROM posts ` + where + ` ORDER BY ` + sortField + ` ` + sortDir + fmt.Sprintf(` LIMIT $%d OFFSET $%d`, i, i+1)
+	query := `SELECT id, title, content, author, created_at, updated_at FROM posts ` + where + ` ORDER BY ` + sortField + ` ` + sortDir + ` LIMIT $` + fmt.Sprint(paramCount) + ` OFFSET $` + fmt.Sprint(paramCount+1)
 	params = append(params, pageSize, (page-1)*pageSize)
 
 	rows, err := r.db.QueryWithRetry(ctx, r.retries, query, params...)
@@ -143,6 +143,15 @@ func (r *PostsRepository) Exists(ctx context.Context, id int) (bool, error) {
 }
 
 func (r *PostsRepository) GetCommentsCount(ctx context.Context, postID int) (int, error) {
-	// Assuming no direct link, return 0 or implement if schema changes
-	return 0, nil
+	query := `SELECT COUNT(*) FROM comments WHERE post_id = $1`
+	row, err := r.db.QueryRowWithRetry(ctx, r.retries, query, postID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query row: %w", err)
+	}
+	var count int
+	err = row.Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to scan: %w", err)
+	}
+	return count, nil
 }

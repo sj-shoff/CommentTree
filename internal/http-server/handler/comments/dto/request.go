@@ -1,18 +1,18 @@
 package dto
 
 import (
-	"strconv"
-
 	"github.com/go-playground/validator/v10"
 )
 
 type CreateCommentRequest struct {
+	PostID   int    `json:"post_id" validate:"required,min=1"`
 	ParentID *int   `json:"parent_id,omitempty"`
 	Content  string `json:"content" validate:"required,min=1,max=1000"`
 	Author   string `json:"author" validate:"required,min=2,max=50"`
 }
 
 type GetCommentsRequest struct {
+	PostID    int    `query:"post_id" validate:"required,min=1"`
 	ParentID  *int   `query:"parent"`
 	Page      int    `query:"page"`
 	PageSize  int    `query:"page_size"`
@@ -22,15 +22,6 @@ type GetCommentsRequest struct {
 }
 
 func (r *GetCommentsRequest) Bind() error {
-	parentIDStr := strconv.Itoa(*r.ParentID)
-	if parentIDStr != "" {
-		parentID, err := strconv.Atoi(parentIDStr)
-		if err != nil {
-			return err
-		}
-		r.ParentID = &parentID
-	}
-
 	if r.Page < 1 {
 		r.Page = 1
 	}

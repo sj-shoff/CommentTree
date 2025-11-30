@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Система комментариев</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fas fa-comments"></i> Система комментариев</h1>
+        </header>
+
+        <!-- Создание поста -->
+        <div class="post-creation">
+            <h3><i class="fas fa-plus-circle"></i> Создать новый пост</h3>
+            <div class="post-form">
+                <input type="text" id="postTitle" placeholder="Заголовок поста" maxlength="200">
+                <textarea id="postContent" placeholder="Содержание поста" maxlength="10000"></textarea>
+                <input type="text" id="postAuthor" placeholder="Ваше имя" maxlength="50">
+                <button id="createPostBtn" class="btn btn-primary">
+                    <i class="fas fa-paper-plane"></i> Опубликовать пост
+                </button>
+            </div>
+        </div>
+
+        <!-- Список постов -->
+        <div class="posts-section">
+            <h3><i class="fas fa-file-alt"></i> Все посты</h3>
+            <div id="postsList" class="posts-list">
+                <div class="loading">Загрузка постов...</div>
+            </div>
+        </div>
+
+        <!-- Выбранный пост и комментарии -->
+        <div id="selectedPostSection" class="selected-post-section" style="display: none;">
+            <div class="selected-post-header">
+                <h3><i class="fas fa-comments"></i> Комментарии к посту: <span id="selectedPostTitle"></span></h3>
+                <button id="closePost" class="btn btn-outline">
+                    <i class="fas fa-times"></i> Закрыть
+                </button>
+            </div>
+            
+            <div class="selected-post-content">
+                <div class="post-content-card">
+                    <div class="post-meta">
+                        <span class="author"><i class="fas fa-user"></i> <span id="selectedPostAuthor"></span></span>
+                        <span class="date"><i class="far fa-clock"></i> <span id="selectedPostDate"></span></span>
+                    </div>
+                    <div class="post-body">
+                        <p id="selectedPostContent"></p>
+                    </div>
+                    <div class="post-stats">
+                        <span><i class="fas fa-comments"></i> <span id="selectedPostCommentsCount">0</span> комментариев</span>
+                    </div>
+                </div>
+
+                <!-- Форма добавления комментария -->
+                <div class="comment-form">
+                    <h4><i class="fas fa-edit"></i> Добавить комментарий</h4>
+                    <form id="commentForm">
+                        <input type="text" id="commentAuthor" placeholder="Ваше имя" required maxlength="50">
+                        <textarea id="commentContent" placeholder="Ваш комментарий..." required maxlength="1000"></textarea>
+                        <input type="hidden" id="parentId" value="">
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-paper-plane"></i> Отправить комментарий
+                            </button>
+                            <button type="button" id="cancelReply" class="btn btn-secondary" style="display: none;">
+                                <i class="fas fa-times"></i> Отменить ответ
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Поиск и сортировка -->
+                <div class="comments-controls">
+                    <div class="search-box">
+                        <input type="text" id="searchInput" placeholder="Поиск по комментариям...">
+                        <button id="searchBtn" class="btn btn-outline">
+                            <i class="fas fa-search"></i> Найти
+                        </button>
+                        <button id="clearSearch" class="btn btn-outline">
+                            <i class="fas fa-times"></i> Сбросить
+                        </button>
+                    </div>
+                    <div class="sort-controls">
+                        <label>Сортировка:</label>
+                        <select id="sortBy">
+                            <option value="created_at">По дате</option>
+                            <option value="updated_at">По обновлению</option>
+                        </select>
+                        <select id="sortOrder">
+                            <option value="desc">Новые сначала</option>
+                            <option value="asc">Старые сначала</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Статистика -->
+                <div class="stats">
+                    <span id="commentsStats">Комментарии загружаются...</span>
+                </div>
+
+                <!-- Список комментариев -->
+                <div class="comments-section">
+                    <div id="commentsList" class="comments-list">
+                        <div class="loading">Загрузка комментариев...</div>
+                    </div>
+                    
+                    <!-- Пагинация -->
+                    <div class="pagination-controls">
+                        <button id="prevPage" class="btn btn-outline" disabled>
+                            <i class="fas fa-chevron-left"></i> Назад
+                        </button>
+                        <span id="pageInfo">Страница 1</span>
+                        <button id="nextPage" class="btn btn-outline" disabled>
+                            Вперед <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Модальное окно подтверждения удаления -->
+        <div id="deleteModal" class="modal">
+            <div class="modal-content">
+                <h3>Подтверждение удаления</h3>
+                <p>Вы уверены, что хотите удалить этот комментарий? Это действие нельзя отменить.</p>
+                <div class="modal-actions">
+                    <button id="confirmDelete" class="btn btn-danger">Удалить</button>
+                    <button id="cancelDelete" class="btn btn-secondary">Отмена</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

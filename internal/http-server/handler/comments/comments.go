@@ -43,6 +43,7 @@ func (h *CommentsHandler) CreateComment(w http.ResponseWriter, r *http.Request) 
 	}
 
 	comment := domain.Comment{
+		PostID:   req.PostID,
 		ParentID: req.ParentID,
 		Content:  req.Content,
 		Author:   req.Author,
@@ -60,6 +61,7 @@ func (h *CommentsHandler) CreateComment(w http.ResponseWriter, r *http.Request) 
 
 	resp := dto.CommentResponse{
 		ID:        createdComment.ID,
+		PostID:    createdComment.PostID,
 		ParentID:  createdComment.ParentID,
 		Content:   createdComment.Content,
 		Author:    createdComment.Author,
@@ -74,6 +76,14 @@ func (h *CommentsHandler) CreateComment(w http.ResponseWriter, r *http.Request) 
 
 func (h *CommentsHandler) GetComments(w http.ResponseWriter, r *http.Request) {
 	var req dto.GetCommentsRequest
+
+	postIDStr := r.URL.Query().Get("post_id")
+	postID, err := strconv.Atoi(postIDStr)
+	if err != nil {
+		http.Error(w, "Invalid post ID", http.StatusBadRequest)
+		return
+	}
+	req.PostID = postID
 
 	parentIDStr := r.URL.Query().Get("parent")
 	if parentIDStr != "" {
@@ -104,7 +114,7 @@ func (h *CommentsHandler) GetComments(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	tree, err := h.usecase.GetComments(ctx, req.ParentID, req.Page, req.PageSize, req.Search, req.SortBy, req.SortOrder)
+	tree, err := h.usecase.GetComments(ctx, req.PostID, req.ParentID, req.Page, req.PageSize, req.Search, req.SortBy, req.SortOrder)
 	if err != nil {
 		h.logger.Error().Err(err).Msg("Failed to get comments")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -156,6 +166,7 @@ func convertToResponse(comments []domain.Comment) []dto.CommentResponse {
 	for i, comment := range comments {
 		resp := dto.CommentResponse{
 			ID:        comment.ID,
+			PostID:    comment.PostID,
 			ParentID:  comment.ParentID,
 			Content:   comment.Content,
 			Author:    comment.Author,

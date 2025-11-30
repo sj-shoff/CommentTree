@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"comments-system/internal/domain"
@@ -28,8 +30,10 @@ func NewCommentsRepository(db *dbpg.DB, retries retry.Strategy) *CommentsReposit
 func (r *CommentsRepository) Create(ctx context.Context, comment domain.Comment) (domain.Comment, error) {
 	var id int
 	var createdAt, updatedAt time.Time
-	query := `INSERT INTO comments (parent_id, content, author, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id, created_at, updated_at`
-	row, err := r.db.QueryRowWithRetry(ctx, r.retries, query, comment.ParentID, comment.Content, comment.Author)
+	query := `INSERT INTO comments (post_id, parent_id, content, author, created_at, updated_at) 
+	          VALUES ($1, $2, $3, $4, NOW(), NOW()) 
+	          RETURNING id, created_at, updated_at`
+	row, err := r.db.QueryRowWithRetry(ctx, r.retries, query, comment.PostID, comment.ParentID, comment.Content, comment.Author)
 	if err != nil {
 		return domain.Comment{}, fmt.Errorf("failed to query row: %w", err)
 	}
@@ -73,90 +77,91 @@ func (r *CommentsRepository) Delete(ctx context.Context, id int) error {
 	return nil
 }
 
-func (r *CommentsRepository) GetTree(ctx context.Context, rootID int) ([]domain.Comment, error) {
+func (r *CommentsRepository) GetTree(ctx context.Context, postID, rootID int) ([]domain.Comment, error) {
 	query := `
 	WITH RECURSIVE tree AS (
-	  SELECT id, parent_id, content, author, created_at, updated_at FROM comments WHERE id = $1
+	  SELECT id, post_id, parent_id, content, author, created_at, updated_at 
+	  FROM comments 
+	  WHERE id = $1 AND post_id = $2
 	  UNION
-	  SELECT c.id, c.parent_id, c.content, c.author, c.created_at, c.updated_at FROM comments c INNER JOIN tree t ON c.parent_id = t.id
+	  SELECT c.id, c.post_id, c.parent_id, c.content, c.author, c.created_at, c.updated_at 
+	  FROM comments c 
+	  INNER JOIN tree t ON c.parent_id = t.id
 	)
-	SELECT id, parent_id, content, author, created_at, updated_at FROM tree ORDER BY id
+	SELECT id, post_id, parent_id, content, author, created_at, updated_at FROM tree
 	`
-	rows, err := r.db.QueryWithRetry(ctx, r.retries, query, rootID)
+	rows, err := r.db.QueryWithRetry(ctx, r.retries, query, rootID, postID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query comment tree: %w", err)
 	}
 	defer rows.Close()
 
-	commentMap := make(map[int]*domain.Comment)
+	var comments []domain.Comment
 	for rows.Next() {
 		var c domain.Comment
-		var parentID sql.NullInt32
-		err := rows.Scan(&c.ID, &parentID, &c.Content, &c.Author, &c.CreatedAt, &c.UpdatedAt)
+		var pid sql.NullInt32
+		err := rows.Scan(&c.ID, &c.PostID, &pid, &c.Content, &c.Author, &c.CreatedAt, &c.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan comment row: %w", err)
 		}
-		if parentID.Valid {
-			pid := int(parentID.Int32)
-			c.ParentID = &pid
+		if pid.Valid {
+			pidInt := int(pid.Int32)
+			c.ParentID = &pidInt
 		}
-		commentMap[c.ID] = &c
+		comments = append(comments, c)
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating comment rows: %w", err)
 	}
 
-	root, ok := commentMap[rootID]
-	if !ok {
-		return nil, comments.ErrCommentNotFound
-	}
-
-	for _, c := range commentMap {
-		if c.ParentID != nil {
-			parent, ok := commentMap[*c.ParentID]
-			if ok {
-				parent.Children = append(parent.Children, *c)
-			}
-		}
-	}
-
-	return root.Children, nil
+	return comments, nil
 }
 
 func (r *CommentsRepository) GetByID(ctx context.Context, id int) (domain.Comment, error) {
 	var c domain.Comment
-	var parentID sql.NullInt32
-	query := `SELECT id, parent_id, content, author, created_at, updated_at FROM comments WHERE id = $1`
+	var pid sql.NullInt32
+	query := `SELECT id, post_id, parent_id, content, author, created_at, updated_at FROM comments WHERE id = $1`
 	row, err := r.db.QueryRowWithRetry(ctx, r.retries, query, id)
 	if err != nil {
 		return domain.Comment{}, fmt.Errorf("failed to query row: %w", err)
 	}
-	err = row.Scan(&c.ID, &parentID, &c.Content, &c.Author, &c.CreatedAt, &c.UpdatedAt)
+	err = row.Scan(&c.ID, &c.PostID, &pid, &c.Content, &c.Author, &c.CreatedAt, &c.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return domain.Comment{}, comments.ErrCommentNotFound
 	}
 	if err != nil {
 		return domain.Comment{}, fmt.Errorf("failed to scan: %w", err)
 	}
-	if parentID.Valid {
-		pid := int(parentID.Int32)
-		c.ParentID = &pid
+	if pid.Valid {
+		pidInt := int(pid.Int32)
+		c.ParentID = &pidInt
 	}
 	return c, nil
 }
 
-func (r *CommentsRepository) GetByParent(ctx context.Context, parentID *int, page, pageSize int, searchQuery, sortBy, sortOrder string) ([]domain.Comment, int, error) {
-	where := "WHERE parent_id IS NULL"
-	params := []interface{}{}
-	i := 1
-	if searchQuery != "" {
-		where += fmt.Sprintf(" AND content ILIKE $%d", i)
-		params = append(params, "%"+searchQuery+"%")
-		i++
+func (r *CommentsRepository) GetByPostAndParent(ctx context.Context, postID int, parentID *int, page, pageSize int, searchQuery, sortBy, sortOrder string) ([]domain.Comment, int, error) {
+	var whereConditions []string
+	var params []interface{}
+
+	whereConditions = append(whereConditions, "post_id = $1")
+	params = append(params, postID)
+
+	if parentID != nil {
+		whereConditions = append(whereConditions, "parent_id = $2")
+		params = append(params, *parentID)
+	} else {
+		whereConditions = append(whereConditions, "parent_id IS NULL")
 	}
 
-	countQuery := `SELECT COUNT(*) FROM comments ` + where
+	if searchQuery != "" {
+		whereConditions = append(whereConditions, fmt.Sprintf("content ILIKE $%d", len(params)+1))
+		params = append(params, "%"+searchQuery+"%")
+	}
+
+	whereClause := "WHERE " + strings.Join(whereConditions, " AND ")
+
+	countQuery := `SELECT COUNT(*) FROM comments ` + whereClause
 	row, err := r.db.QueryRowWithRetry(ctx, r.retries, countQuery, params...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to query row: %w", err)
@@ -179,7 +184,11 @@ func (r *CommentsRepository) GetByParent(ctx context.Context, parentID *int, pag
 		sortDir = "ASC"
 	}
 
-	query := `SELECT id, parent_id, content, author, created_at, updated_at FROM comments ` + where + ` ORDER BY ` + sortField + ` ` + sortDir + fmt.Sprintf(` LIMIT $%d OFFSET $%d`, i, i+1)
+	query := `SELECT id, post_id, parent_id, content, author, created_at, updated_at 
+	          FROM comments ` + whereClause +
+		` ORDER BY ` + sortField + ` ` + sortDir +
+		` LIMIT $` + strconv.Itoa(len(params)+1) +
+		` OFFSET $` + strconv.Itoa(len(params)+2)
 	params = append(params, pageSize, (page-1)*pageSize)
 
 	rows, err := r.db.QueryWithRetry(ctx, r.retries, query, params...)
@@ -192,7 +201,7 @@ func (r *CommentsRepository) GetByParent(ctx context.Context, parentID *int, pag
 	for rows.Next() {
 		var c domain.Comment
 		var pid sql.NullInt32
-		err := rows.Scan(&c.ID, &pid, &c.Content, &c.Author, &c.CreatedAt, &c.UpdatedAt)
+		err := rows.Scan(&c.ID, &c.PostID, &pid, &c.Content, &c.Author, &c.CreatedAt, &c.UpdatedAt)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to scan comment row: %w", err)
 		}

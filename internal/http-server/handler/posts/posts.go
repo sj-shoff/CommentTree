@@ -74,14 +74,9 @@ func (h *PostsHandler) GetPosts(w http.ResponseWriter, r *http.Request) {
 	req.SortBy = r.URL.Query().Get("sort_by")
 	req.SortOrder = r.URL.Query().Get("sort_order")
 
-	if req.Page < 1 {
-		req.Page = 1
-	}
-	if req.PageSize < 1 {
-		req.PageSize = 10
-	}
-	if req.PageSize > 100 {
-		req.PageSize = 100
+	if err := req.Validate(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)

@@ -26,8 +26,8 @@ func NewCommentsCache(cfg *config.Config, retries retry.Strategy) *сommentsCach
 	}
 }
 
-func (c *сommentsCache) GetCommentTree(ctx context.Context, rootID int) ([]domain.Comment, error) {
-	key := fmt.Sprintf("comment:tree:%d", rootID)
+func (c *сommentsCache) GetCommentTree(ctx context.Context, postID, rootID int) ([]domain.Comment, error) {
+	key := fmt.Sprintf("comment:tree:post:%d:root:%d", postID, rootID)
 
 	data, err := c.client.GetWithRetry(ctx, c.retries, key)
 	if err != nil {
@@ -45,8 +45,8 @@ func (c *сommentsCache) GetCommentTree(ctx context.Context, rootID int) ([]doma
 	return comments, nil
 }
 
-func (c *сommentsCache) SetCommentTree(ctx context.Context, rootID int, comments []domain.Comment) error {
-	key := fmt.Sprintf("comment:tree:%d", rootID)
+func (c *сommentsCache) SetCommentTree(ctx context.Context, postID, rootID int, comments []domain.Comment) error {
+	key := fmt.Sprintf("comment:tree:post:%d:root:%d", postID, rootID)
 
 	data, err := json.Marshal(comments)
 	if err != nil {
@@ -60,8 +60,8 @@ func (c *сommentsCache) SetCommentTree(ctx context.Context, rootID int, comment
 	return nil
 }
 
-func (c *сommentsCache) InvalidateCommentTree(ctx context.Context, rootID int) error {
-	key := fmt.Sprintf("comment:tree:%d", rootID)
+func (c *сommentsCache) InvalidateCommentTree(ctx context.Context, postID, rootID int) error {
+	key := fmt.Sprintf("comment:tree:post:%d:root:%d", postID, rootID)
 
 	err := c.client.DelWithRetry(ctx, c.retries, key)
 	if err != nil {
@@ -70,8 +70,8 @@ func (c *сommentsCache) InvalidateCommentTree(ctx context.Context, rootID int) 
 	return nil
 }
 
-func (c *сommentsCache) GetComments(ctx context.Context, parentID *int, page, pageSize int, searchQuery, sortBy, sortOrder string) ([]domain.Comment, int, error) {
-	key := c.getCommentsCacheKey(parentID, page, pageSize, searchQuery, sortBy, sortOrder)
+func (c *сommentsCache) GetComments(ctx context.Context, postID int, parentID *int, page, pageSize int, searchQuery, sortBy, sortOrder string) ([]domain.Comment, int, error) {
+	key := c.getCommentsCacheKey(postID, parentID, page, pageSize, searchQuery, sortBy, sortOrder)
 
 	data, err := c.client.GetWithRetry(ctx, c.retries, key)
 	if err != nil {
@@ -93,8 +93,8 @@ func (c *сommentsCache) GetComments(ctx context.Context, parentID *int, page, p
 	return cachedData.Comments, cachedData.TotalCount, nil
 }
 
-func (c *сommentsCache) SetComments(ctx context.Context, parentID *int, page, pageSize int, searchQuery, sortBy, sortOrder string, comments []domain.Comment, totalCount int) error {
-	key := c.getCommentsCacheKey(parentID, page, pageSize, searchQuery, sortBy, sortOrder)
+func (c *сommentsCache) SetComments(ctx context.Context, postID int, parentID *int, page, pageSize int, searchQuery, sortBy, sortOrder string, comments []domain.Comment, totalCount int) error {
+	key := c.getCommentsCacheKey(postID, parentID, page, pageSize, searchQuery, sortBy, sortOrder)
 
 	data, err := json.Marshal(struct {
 		Comments   []domain.Comment
@@ -115,7 +115,7 @@ func (c *сommentsCache) SetComments(ctx context.Context, parentID *int, page, p
 	return nil
 }
 
-func (c *сommentsCache) InvalidateComments(ctx context.Context, parentID *int) error {
+func (c *сommentsCache) InvalidateComments(ctx context.Context, postID int, parentID *int) error {
 	if parentID != nil {
 		key := fmt.Sprintf("comment:tree:%d", *parentID)
 		err := c.client.DelWithRetry(ctx, c.retries, key)
@@ -133,11 +133,11 @@ func (c *сommentsCache) InvalidateComments(ctx context.Context, parentID *int) 
 	return nil
 }
 
-func (c *сommentsCache) getCommentsCacheKey(parentID *int, page, pageSize int, searchQuery, sortBy, sortOrder string) string {
+func (c *сommentsCache) getCommentsCacheKey(postID int, parentID *int, page, pageSize int, searchQuery, sortBy, sortOrder string) string {
 	if parentID != nil {
-		return fmt.Sprintf("comments:parent:%d:page:%d:size:%d:search:%s:sort:%s:%s",
-			*parentID, page, pageSize, searchQuery, sortBy, sortOrder)
+		return fmt.Sprintf("comments:post:%d:parent:%d:page:%d:size:%d:search:%s:sort:%s:%s",
+			postID, *parentID, page, pageSize, searchQuery, sortBy, sortOrder)
 	}
-	return fmt.Sprintf("comments:root:page:%d:size:%d:search:%s:sort:%s:%s",
-		page, pageSize, searchQuery, sortBy, sortOrder)
+	return fmt.Sprintf("comments:post:%d:root:page:%d:size:%d:search:%s:sort:%s:%s",
+		postID, page, pageSize, searchQuery, sortBy, sortOrder)
 }
