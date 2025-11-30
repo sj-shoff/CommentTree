@@ -43,14 +43,3 @@ func FromDomainPosts(posts []domain.Post) []PostResponse {
 	}
 	return responses
 }
-
-func FromDomainPostsTree(tree domain.PostTree) PostsResponse {
-	return PostsResponse{
-		Posts:    FromDomainPosts(tree.Posts),
-		Total:    tree.Total,
-		Page:     tree.Page,
-		PageSize: tree.PageSize,
-		HasNext:  tree.HasNext,
-		HasPrev:  tree.HasPrev,
-	}
-}

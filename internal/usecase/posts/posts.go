@@ -52,70 +52,45 @@ func (u *PostsUsecase) CreatePost(ctx context.Context, post domain.Post) (domain
 		return domain.Post{}, err
 	}
 
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		u.cache.SetPost(ctx, createdPost)
-	}()
-
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		u.cache.InvalidatePosts(ctx)
-	}()
+	if err := u.cache.InvalidatePosts(ctx); err != nil {
+		u.logger.Warn().Err(err).Msg("Failed to invalidate posts cache")
+	}
 
 	return createdPost, nil
 }
 
-func (u *PostsUsecase) GetPosts(ctx context.Context, page, pageSize int, searchQuery, sortBy, sortOrder string) (domain.PostTree, error) {
+// УПРОЩАЕМ - возвращаем просто слайс постов и общее количество
+func (u *PostsUsecase) GetPosts(ctx context.Context, page, pageSize int, searchQuery, sortBy, sortOrder string) ([]domain.Post, int, error) {
 	cachedPosts, totalCount, err := u.cache.GetPosts(ctx, page, pageSize, searchQuery, sortBy, sortOrder)
 	if err == nil {
-		return domain.PostTree{
-			Posts:    cachedPosts,
-			Total:    totalCount,
-			Page:     page,
-			PageSize: pageSize,
-			HasNext:  (page * pageSize) < totalCount,
-			HasPrev:  page > 1,
-		}, nil
+		return cachedPosts, totalCount, nil
 	}
 
 	u.logger.Warn().Err(err).Msg("Cache miss for posts, querying DB")
 
 	posts, totalCount, err := u.repo.GetAll(ctx, page, pageSize, searchQuery, sortBy, sortOrder)
 	if err != nil {
-		return domain.PostTree{}, err
+		return nil, 0, err
 	}
 
 	for i := range posts {
-		count, countErr := u.cache.GetCommentsCount(ctx, posts[i].ID)
+		count, countErr := u.repo.GetCommentsCount(ctx, posts[i].ID)
 		if countErr != nil {
-			count, countErr = u.repo.GetCommentsCount(ctx, posts[i].ID)
-			if countErr != nil {
-				u.logger.Warn().Err(countErr).Int("post_id", posts[i].ID).Msg("Failed to get comments count")
-				count = 0
-			}
-			if err := u.cache.SetCommentsCount(ctx, posts[i].ID, count); err != nil {
-				u.logger.Warn().Err(err).Int("post_id", posts[i].ID).Msg("Failed to cache comments count")
-			}
+			u.logger.Warn().Err(countErr).Int("post_id", posts[i].ID).Msg("Failed to get comments count")
+			count = 0
 		}
 		posts[i].CommentsCount = count
 	}
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		u.cache.SetPosts(ctx, page, pageSize, searchQuery, sortBy, sortOrder, posts, totalCount)
+		if err := u.cache.SetPosts(ctx, page, pageSize, searchQuery, sortBy, sortOrder, posts, totalCount); err != nil {
+			u.logger.Warn().Err(err).Msg("Failed to cache posts")
+		}
 	}()
 
-	return domain.PostTree{
-		Posts:    posts,
-		Total:    totalCount,
-		Page:     page,
-		PageSize: pageSize,
-		HasNext:  (page * pageSize) < totalCount,
-		HasPrev:  page > 1,
-	}, nil
+	return posts, totalCount, nil
 }
 
 func (u *PostsUsecase) GetPostByID(ctx context.Context, id int) (domain.Post, error) {
@@ -131,23 +106,19 @@ func (u *PostsUsecase) GetPostByID(ctx context.Context, id int) (domain.Post, er
 		return domain.Post{}, err
 	}
 
-	count, countErr := u.cache.GetCommentsCount(ctx, id)
+	count, countErr := u.repo.GetCommentsCount(ctx, id)
 	if countErr != nil {
-		count, countErr = u.repo.GetCommentsCount(ctx, id)
-		if countErr != nil {
-			u.logger.Warn().Err(countErr).Int("post_id", id).Msg("Failed to get comments count")
-			count = 0
-		}
-		if err := u.cache.SetCommentsCount(ctx, id, count); err != nil {
-			u.logger.Warn().Err(err).Int("post_id", id).Msg("Failed to cache comments count")
-		}
+		u.logger.Warn().Err(countErr).Int("post_id", id).Msg("Failed to get comments count")
+		count = 0
 	}
 	post.CommentsCount = count
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		u.cache.SetPost(ctx, post)
+		if err := u.cache.SetPost(ctx, post); err != nil {
+			u.logger.Warn().Err(err).Int("post_id", id).Msg("Failed to cache post")
+		}
 	}()
 
 	return post, nil
@@ -171,12 +142,10 @@ func (u *PostsUsecase) DeletePost(ctx context.Context, id int) error {
 	}
 
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-
 		u.cache.InvalidatePost(ctx, id)
 		u.cache.InvalidatePosts(ctx)
-
 	}()
 
 	return nil

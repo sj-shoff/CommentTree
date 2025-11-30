@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"comments-system/internal/domain"
@@ -28,15 +29,21 @@ func NewPostsRepository(db *dbpg.DB, retries retry.Strategy) *PostsRepository {
 func (r *PostsRepository) Create(ctx context.Context, post domain.Post) (domain.Post, error) {
 	var id int
 	var createdAt, updatedAt time.Time
-	query := `INSERT INTO posts (title, content, author, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING id, created_at, updated_at`
+
+	query := `INSERT INTO posts (title, content, author, created_at, updated_at) 
+              VALUES ($1, $2, $3, NOW(), NOW()) 
+              RETURNING id, created_at, updated_at`
+
 	row, err := r.db.QueryRowWithRetry(ctx, r.retries, query, post.Title, post.Content, post.Author)
 	if err != nil {
-		return domain.Post{}, fmt.Errorf("failed to query row: %w", err)
+		return domain.Post{}, fmt.Errorf("failed to create post: %w", err)
 	}
+
 	err = row.Scan(&id, &createdAt, &updatedAt)
 	if err != nil {
-		return domain.Post{}, fmt.Errorf("failed to scan: %w", err)
+		return domain.Post{}, fmt.Errorf("failed to scan created post: %w", err)
 	}
+
 	post.ID = id
 	post.CreatedAt = createdAt
 	post.UpdatedAt = updatedAt
@@ -44,24 +51,28 @@ func (r *PostsRepository) Create(ctx context.Context, post domain.Post) (domain.
 }
 
 func (r *PostsRepository) GetAll(ctx context.Context, page, pageSize int, searchQuery, sortBy, sortOrder string) ([]domain.Post, int, error) {
-	where := ""
+	whereConditions := []string{"1=1"}
 	params := []interface{}{}
-	paramCount := 1
+	paramCount := 0
+
 	if searchQuery != "" {
-		where = "WHERE title ILIKE $1 OR content ILIKE $2"
-		params = append(params, "%"+searchQuery+"%", "%"+searchQuery+"%")
-		paramCount += 2
+		paramCount++
+		whereConditions = append(whereConditions, fmt.Sprintf("(title ILIKE $%d OR content ILIKE $%d)", paramCount, paramCount))
+		params = append(params, "%"+searchQuery+"%")
 	}
 
-	countQuery := `SELECT COUNT(*) FROM posts ` + where
+	whereClause := strings.Join(whereConditions, " AND ")
+
+	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM posts WHERE %s`, whereClause)
+
 	row, err := r.db.QueryRowWithRetry(ctx, r.retries, countQuery, params...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to query row: %w", err)
+		return nil, 0, fmt.Errorf("failed to count posts: %w", err)
 	}
+
 	var total int
-	err = row.Scan(&total)
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to scan: %w", err)
+	if err := row.Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to scan count: %w", err)
 	}
 
 	sortField := "created_at"
@@ -71,12 +82,20 @@ func (r *PostsRepository) GetAll(ctx context.Context, page, pageSize int, search
 	case "title":
 		sortField = "title"
 	}
+
 	sortDir := "DESC"
 	if sortOrder == "asc" {
 		sortDir = "ASC"
 	}
 
-	query := `SELECT id, title, content, author, created_at, updated_at FROM posts ` + where + ` ORDER BY ` + sortField + ` ` + sortDir + ` LIMIT $` + fmt.Sprint(paramCount) + ` OFFSET $` + fmt.Sprint(paramCount+1)
+	query := fmt.Sprintf(`
+        SELECT id, title, content, author, created_at, updated_at 
+        FROM posts 
+        WHERE %s 
+        ORDER BY %s %s 
+        LIMIT $%d OFFSET $%d`,
+		whereClause, sortField, sortDir, len(params)+1, len(params)+2)
+
 	params = append(params, pageSize, (page-1)*pageSize)
 
 	rows, err := r.db.QueryWithRetry(ctx, r.retries, query, params...)
@@ -87,12 +106,12 @@ func (r *PostsRepository) GetAll(ctx context.Context, page, pageSize int, search
 
 	var posts []domain.Post
 	for rows.Next() {
-		var p domain.Post
-		err := rows.Scan(&p.ID, &p.Title, &p.Content, &p.Author, &p.CreatedAt, &p.UpdatedAt)
+		var post domain.Post
+		err := rows.Scan(&post.ID, &post.Title, &post.Content, &post.Author, &post.CreatedAt, &post.UpdatedAt)
 		if err != nil {
-			return nil, 0, fmt.Errorf("failed to scan post row: %w", err)
+			return nil, 0, fmt.Errorf("failed to scan post: %w", err)
 		}
-		posts = append(posts, p)
+		posts = append(posts, post)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -103,55 +122,64 @@ func (r *PostsRepository) GetAll(ctx context.Context, page, pageSize int, search
 }
 
 func (r *PostsRepository) GetByID(ctx context.Context, id int) (domain.Post, error) {
-	var p domain.Post
 	query := `SELECT id, title, content, author, created_at, updated_at FROM posts WHERE id = $1`
+
 	row, err := r.db.QueryRowWithRetry(ctx, r.retries, query, id)
 	if err != nil {
-		return domain.Post{}, fmt.Errorf("failed to query row: %w", err)
+		return domain.Post{}, fmt.Errorf("failed to query post: %w", err)
 	}
-	err = row.Scan(&p.ID, &p.Title, &p.Content, &p.Author, &p.CreatedAt, &p.UpdatedAt)
+
+	var post domain.Post
+	err = row.Scan(&post.ID, &post.Title, &post.Content, &post.Author, &post.CreatedAt, &post.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return domain.Post{}, posts.ErrPostNotFound
 	}
 	if err != nil {
-		return domain.Post{}, fmt.Errorf("failed to scan: %w", err)
+		return domain.Post{}, fmt.Errorf("failed to scan post: %w", err)
 	}
-	return p, nil
+
+	return post, nil
 }
 
 func (r *PostsRepository) Delete(ctx context.Context, id int) error {
 	query := `DELETE FROM posts WHERE id = $1`
+
 	_, err := r.db.ExecWithRetry(ctx, r.retries, query, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete post: %w", err)
 	}
+
 	return nil
 }
 
 func (r *PostsRepository) Exists(ctx context.Context, id int) (bool, error) {
-	var count int
-	query := `SELECT COUNT(*) FROM posts WHERE id = $1`
+	query := `SELECT EXISTS(SELECT 1 FROM posts WHERE id = $1)`
+
 	row, err := r.db.QueryRowWithRetry(ctx, r.retries, query, id)
 	if err != nil {
-		return false, fmt.Errorf("failed to query row: %w", err)
+		return false, fmt.Errorf("failed to check post existence: %w", err)
 	}
-	err = row.Scan(&count)
-	if err != nil {
-		return false, fmt.Errorf("failed to scan: %w", err)
+
+	var exists bool
+	if err := row.Scan(&exists); err != nil {
+		return false, fmt.Errorf("failed to scan existence: %w", err)
 	}
-	return count > 0, nil
+
+	return exists, nil
 }
 
 func (r *PostsRepository) GetCommentsCount(ctx context.Context, postID int) (int, error) {
 	query := `SELECT COUNT(*) FROM comments WHERE post_id = $1`
+
 	row, err := r.db.QueryRowWithRetry(ctx, r.retries, query, postID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to query row: %w", err)
+		return 0, fmt.Errorf("failed to count comments: %w", err)
 	}
+
 	var count int
-	err = row.Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("failed to scan: %w", err)
+	if err := row.Scan(&count); err != nil {
+		return 0, fmt.Errorf("failed to scan comments count: %w", err)
 	}
+
 	return count, nil
 }

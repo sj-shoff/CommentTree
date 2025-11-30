@@ -82,17 +82,26 @@ func (h *PostsHandler) GetPosts(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	tree, err := h.usecase.GetPosts(ctx, req.Page, req.PageSize, req.Search, req.SortBy, req.SortOrder)
+	// УПРОЩАЕМ - получаем просто посты и общее количество
+	posts, totalCount, err := h.usecase.GetPosts(ctx, req.Page, req.PageSize, req.Search, req.SortBy, req.SortOrder)
 	if err != nil {
 		h.logger.Error().Err(err).Msg("Failed to get posts")
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	resp := dto.FromDomainPostsTree(tree)
+	// Создаем простой ответ
+	response := map[string]interface{}{
+		"posts":     dto.FromDomainPosts(posts),
+		"total":     totalCount,
+		"page":      req.Page,
+		"page_size": req.PageSize,
+		"has_next":  (req.Page * req.PageSize) < totalCount,
+		"has_prev":  req.Page > 1,
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *PostsHandler) GetPostByID(w http.ResponseWriter, r *http.Request) {
