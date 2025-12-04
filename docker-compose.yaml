@@ -1,21 +1,6 @@
 version: '3.8'
 
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "${SERVER_PORT}:8004"
-    env_file:
-      - .env
-    depends_on:
-      - postgres
-      - redis
-    restart: unless-stopped
-    networks:
-      - app-network
-
   postgres:
     image: postgres:15-alpine
     environment:
@@ -24,7 +9,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d
     ports:
       - "${POSTGRES_PORT}:5432"
     restart: unless-stopped

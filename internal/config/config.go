@@ -7,7 +7,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/wb-go/wbf/retry"
-	"github.com/wb-go/wbf/zlog"
 )
 
 type Config struct {
@@ -20,7 +19,6 @@ type Config struct {
 		MaxOpenConns    int           `env:"DB_MAX_OPEN_CONNS"`
 		MaxIdleConns    int           `env:"DB_MAX_IDLE_CONNS"`
 		ConnMaxLifetime time.Duration `env:"DB_CONN_MAX_LIFETIME"`
-		Slaves          []string      `env:"DB_SLAVES"`
 	}
 	Redis struct {
 		Host string `env:"REDIS_HOST" validate:"required"`
@@ -45,13 +43,9 @@ type Config struct {
 func MustLoad() (*Config, error) {
 	var cfg Config
 
-	err := cleanenv.ReadConfig(".env", &cfg)
+	err := cleanenv.ReadEnv(&cfg)
 	if err != nil {
-		zlog.Logger.Warn().Err(err).Msg("Failed to load .env file, using environment variables")
-		err = cleanenv.ReadEnv(&cfg)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read environment variables: %w", err)
-		}
+		return nil, fmt.Errorf("failed to read environment variables: %w", err)
 	}
 
 	validate := validator.New()
@@ -59,7 +53,6 @@ func MustLoad() (*Config, error) {
 		return nil, fmt.Errorf("config validation failed: %w", err)
 	}
 
-	zlog.Logger.Info().Msg("Configuration loaded and validated successfully")
 	return &cfg, nil
 }
 

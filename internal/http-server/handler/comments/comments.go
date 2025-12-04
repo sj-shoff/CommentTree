@@ -3,13 +3,13 @@ package comments
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
 	"comments-system/internal/domain"
 	"comments-system/internal/http-server/handler/comments/dto"
-	"comments-system/internal/usecase/comments"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
@@ -33,17 +33,18 @@ func NewCommentsHandler(usecase commentsUsecase, logger *zlog.Zerolog) *Comments
 func (h *CommentsHandler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	var req dto.CreateCommentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.logger.Error().Err(err).Msg("Failed to decode request body")
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	if err := h.validate.Struct(req); err != nil {
+		h.logger.Error().Err(err).Msg("Request validation failed")
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	comment := domain.Comment{
-		PostID:   req.PostID,
 		ParentID: req.ParentID,
 		Content:  req.Content,
 		Author:   req.Author,
@@ -55,13 +56,18 @@ func (h *CommentsHandler) CreateComment(w http.ResponseWriter, r *http.Request) 
 	createdComment, err := h.usecase.CreateComment(ctx, comment)
 	if err != nil {
 		h.logger.Error().Err(err).Msg("Failed to create comment")
+
+		if err.Error() == "invalid parent ID: parent comment not found" {
+			http.Error(w, "Parent comment not found", http.StatusBadRequest)
+			return
+		}
+
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	resp := dto.CommentResponse{
 		ID:        createdComment.ID,
-		PostID:    createdComment.PostID,
 		ParentID:  createdComment.ParentID,
 		Content:   createdComment.Content,
 		Author:    createdComment.Author,
@@ -77,18 +83,11 @@ func (h *CommentsHandler) CreateComment(w http.ResponseWriter, r *http.Request) 
 func (h *CommentsHandler) GetComments(w http.ResponseWriter, r *http.Request) {
 	var req dto.GetCommentsRequest
 
-	postIDStr := r.URL.Query().Get("post_id")
-	postID, err := strconv.Atoi(postIDStr)
-	if err != nil {
-		http.Error(w, "Invalid post ID", http.StatusBadRequest)
-		return
-	}
-	req.PostID = postID
-
 	parentIDStr := r.URL.Query().Get("parent")
 	if parentIDStr != "" {
 		parentID, err := strconv.Atoi(parentIDStr)
 		if err != nil {
+			h.logger.Error().Err(err).Str("parent_id", parentIDStr).Msg("Invalid parent ID")
 			http.Error(w, "Invalid parent ID", http.StatusBadRequest)
 			return
 		}
@@ -101,34 +100,29 @@ func (h *CommentsHandler) GetComments(w http.ResponseWriter, r *http.Request) {
 	req.SortBy = r.URL.Query().Get("sort_by")
 	req.SortOrder = r.URL.Query().Get("sort_order")
 
-	if req.Page < 1 {
-		req.Page = 1
-	}
-	if req.PageSize < 1 {
-		req.PageSize = 10
-	}
-	if req.PageSize > 100 {
-		req.PageSize = 100
+	if err := req.Validate(); err != nil {
+		h.logger.Error().Err(err).Msg("Invalid query parameters")
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	tree, err := h.usecase.GetComments(ctx, req.PostID, req.ParentID, req.Page, req.PageSize, req.Search, req.SortBy, req.SortOrder)
+	tree, err := h.usecase.GetComments(ctx, req.ParentID, req.Page, req.PageSize, req.Search, req.SortBy, req.SortOrder)
 	if err != nil {
 		h.logger.Error().Err(err).Msg("Failed to get comments")
+
+		if errors.Is(err, comments_usecase.ErrCommentNotFound) {
+			http.Error(w, "Comment not found", http.StatusNotFound)
+			return
+		}
+
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	resp := dto.CommentsResponse{
-		Comments: convertToResponse(tree.Comments),
-		Total:    tree.Total,
-		Page:     tree.Page,
-		PageSize: tree.PageSize,
-		HasNext:  tree.HasNext,
-		HasPrev:  tree.HasPrev,
-	}
+	resp := dto.FromDomainCommentTree(tree)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
@@ -138,6 +132,7 @@ func (h *CommentsHandler) DeleteComment(w http.ResponseWriter, r *http.Request) 
 	commentIDStr := chi.URLParam(r, "id")
 	commentID, err := strconv.Atoi(commentIDStr)
 	if err != nil {
+		h.logger.Error().Err(err).Str("comment_id", commentIDStr).Msg("Invalid comment ID")
 		http.Error(w, "Invalid comment ID", http.StatusBadRequest)
 		return
 	}
@@ -149,7 +144,7 @@ func (h *CommentsHandler) DeleteComment(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		h.logger.Error().Err(err).Int("comment_id", commentID).Msg("Failed to delete comment")
 
-		if err == comments.ErrCommentNotFound {
+		if errors.Is(err, comments_usecase.ErrCommentNotFound) {
 			http.Error(w, "Comment not found", http.StatusNotFound)
 			return
 		}
@@ -159,26 +154,4 @@ func (h *CommentsHandler) DeleteComment(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func convertToResponse(comments []domain.Comment) []dto.CommentResponse {
-	responses := make([]dto.CommentResponse, len(comments))
-	for i, comment := range comments {
-		resp := dto.CommentResponse{
-			ID:        comment.ID,
-			PostID:    comment.PostID,
-			ParentID:  comment.ParentID,
-			Content:   comment.Content,
-			Author:    comment.Author,
-			CreatedAt: comment.CreatedAt,
-			UpdatedAt: comment.UpdatedAt,
-		}
-
-		if len(comment.Children) > 0 {
-			resp.Children = convertToResponse(comment.Children)
-		}
-
-		responses[i] = resp
-	}
-	return responses
 }

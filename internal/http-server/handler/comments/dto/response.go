@@ -7,7 +7,6 @@ import (
 
 type CommentResponse struct {
 	ID        int               `json:"id"`
-	PostID    int               `json:"post_id"`
 	ParentID  *int              `json:"parent_id,omitempty"`
 	Content   string            `json:"content"`
 	Author    string            `json:"author"`
@@ -28,7 +27,6 @@ type CommentsResponse struct {
 func FromDomainComment(comment domain.Comment) CommentResponse {
 	resp := CommentResponse{
 		ID:        comment.ID,
-		PostID:    comment.PostID,
 		ParentID:  comment.ParentID,
 		Content:   comment.Content,
 		Author:    comment.Author,

@@ -4,7 +4,6 @@ import "time"
 
 type Comment struct {
 	ID        int
-	PostID    int
 	ParentID  *int
 	Content   string
 	Author    string

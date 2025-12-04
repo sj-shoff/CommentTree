@@ -6,177 +6,47 @@ class CommentsApp {
         this.sortBy = 'created_at';
         this.sortOrder = 'desc';
         this.replyingTo = null;
-        this.selectedPost = null;
-        this.posts = [];
+        this.comments = [];
         
         this.init();
     }
 
     init() {
         this.bindEvents();
-        this.loadPosts();
-    }
-
-    bindEvents() {
-        // Создание поста
-        document.getElementById('createPostBtn').addEventListener('click', () => this.createPost());
-        
-        // Закрытие выбранного поста
-        document.getElementById('closePost').addEventListener('click', () => this.closeSelectedPost());
-
-        // Форма комментария
-        document.getElementById('commentForm').addEventListener('submit', (e) => this.handleSubmit(e));
-        document.getElementById('cancelReply').addEventListener('click', () => this.cancelReply());
-
-        // Поиск
-        document.getElementById('searchBtn').addEventListener('click', () => this.handleSearch());
-        document.getElementById('searchInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.handleSearch();
-        });
-        document.getElementById('clearSearch').addEventListener('click', () => this.clearSearch());
-
-        // Сортировка
-        document.getElementById('sortBy').addEventListener('change', () => this.handleSortChange());
-        document.getElementById('sortOrder').addEventListener('change', () => this.handleSortChange());
-
-        // Пагинация
-        document.getElementById('prevPage').addEventListener('click', () => this.prevPage());
-        document.getElementById('nextPage').addEventListener('click', () => this.nextPage());
-
-        // Модальное окно
-        document.getElementById('confirmDelete').addEventListener('click', () => this.confirmDelete());
-        document.getElementById('cancelDelete').addEventListener('click', () => this.hideDeleteModal());
-    }
-
-    async loadPosts() {
-        const list = document.getElementById('postsList');
-        list.innerHTML = '<div class="loading"><div class="loading-spinner"></div> Загрузка постов...</div>';
-
-        try {
-            const response = await fetch('/posts?page=1&page_size=100');
-            if (!response.ok) throw new Error('Ошибка загрузки постов');
-            
-            const data = await response.json();
-            this.posts = data.posts;
-            this.renderPosts();
-        } catch (error) {
-            this.showError('Ошибка при загрузке постов: ' + error.message);
-        }
-    }
-
-    renderPosts() {
-        const list = document.getElementById('postsList');
-        
-        if (this.posts.length === 0) {
-            list.innerHTML = `
-                <div class="loading">
-                    <i class="fas fa-inbox" style="font-size: 3rem; margin-bottom: 1rem; color: #bdc3c7;"></i>
-                    <p>Постов пока нет. Создайте первый пост!</p>
-                </div>
-            `;
-            return;
-        }
-
-        list.innerHTML = this.posts.map(post => `
-            <div class="post-item" onclick="app.selectPost(${post.id})">
-                <div class="post-header">
-                    <div class="post-title">${this.escapeHtml(post.title)}</div>
-                    <div class="post-meta">
-                        <span class="author"><i class="fas fa-user"></i> ${this.escapeHtml(post.author)}</span>
-                        <span class="post-date"><i class="far fa-clock"></i> ${new Date(post.created_at).toLocaleString('ru-RU')}</span>
-                    </div>
-                </div>
-                <div class="post-content">${this.escapeHtml(post.content)}</div>
-                <div class="post-stats">
-                    <span><i class="fas fa-comments"></i> ${post.comments_count || 0} комментариев</span>
-                    <span><i class="far fa-eye"></i> Открыть комментарии</span>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    selectPost(postId) {
-        const post = this.posts.find(p => p.id === postId);
-        if (!post) return;
-
-        this.selectedPost = post;
-        this.showSelectedPost();
         this.loadComments();
     }
 
-    showSelectedPost() {
-        document.getElementById('selectedPostSection').style.display = 'block';
-        document.getElementById('selectedPostTitle').textContent = this.escapeHtml(this.selectedPost.title);
-        document.getElementById('selectedPostAuthor').textContent = this.escapeHtml(this.selectedPost.author);
-        document.getElementById('selectedPostDate').textContent = new Date(this.selectedPost.created_at).toLocaleString('ru-RU');
-        document.getElementById('selectedPostContent').textContent = this.escapeHtml(this.selectedPost.content);
-        document.getElementById('selectedPostCommentsCount').textContent = this.selectedPost.comments_count || 0;
+    bindEvents() {
+        // Создание комментария
+        document.getElementById('createCommentBtn')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.createComment();
+        });
 
-        // Прокрутка к выбранному посту
-        document.getElementById('selectedPostSection').scrollIntoView({ behavior: 'smooth' });
-    }
+        // Поиск
+        document.getElementById('searchBtn')?.addEventListener('click', () => this.handleSearch());
+        document.getElementById('searchInput')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.handleSearch();
+        });
+        document.getElementById('clearSearch')?.addEventListener('click', () => this.clearSearch());
 
-    closeSelectedPost() {
-        this.selectedPost = null;
-        document.getElementById('selectedPostSection').style.display = 'none';
-        this.replyingTo = null;
-        this.cancelReply();
-    }
+        // Сортировка
+        document.getElementById('sortBy')?.addEventListener('change', () => this.handleSortChange());
+        document.getElementById('sortOrder')?.addEventListener('change', () => this.handleSortChange());
 
-    async createPost() {
-        const title = document.getElementById('postTitle').value.trim();
-        const content = document.getElementById('postContent').value.trim();
-        const author = document.getElementById('postAuthor').value.trim();
-
-        if (!title || !content || !author) {
-            this.showError('Пожалуйста, заполните все поля поста');
-            return;
-        }
-
-        const postData = {
-            title: title,
-            content: content,
-            author: author
-        };
-
-        try {
-            const response = await fetch('/posts', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(postData)
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || 'Ошибка при создании поста');
-            }
-
-            this.showSuccess('Пост успешно создан!');
-            
-            // Очистка формы
-            document.getElementById('postTitle').value = '';
-            document.getElementById('postContent').value = '';
-            document.getElementById('postAuthor').value = '';
-            
-            // Перезагрузка списка постов
-            this.loadPosts();
-
-        } catch (error) {
-            this.showError('Ошибка: ' + error.message);
-        }
+        // Пагинация
+        document.getElementById('prevPage')?.addEventListener('click', () => this.prevPage());
+        document.getElementById('nextPage')?.addEventListener('click', () => this.nextPage());
     }
 
     async loadComments() {
-        if (!this.selectedPost) return;
-
-        const list = document.getElementById('commentsList');
-        list.innerHTML = '<div class="loading"><div class="loading-spinner"></div> Загрузка комментариев...</div>';
+        const container = document.getElementById('commentsContainer');
+        if (!container) return;
+        
+        container.innerHTML = '<div class="loading">Загрузка комментариев...</div>';
 
         try {
             const params = new URLSearchParams({
-                post_id: this.selectedPost.id,
                 page: this.currentPage,
                 page_size: this.pageSize,
                 search: this.searchQuery,
@@ -188,37 +58,39 @@ class CommentsApp {
             if (!response.ok) throw new Error('Ошибка загрузки комментариев');
             
             const data = await response.json();
-            this.renderComments(data.comments);
+            this.comments = data.comments || [];
+            this.renderComments();
             this.updatePagination(data);
-            this.updateStats(data.total);
-
+            
         } catch (error) {
             this.showError('Ошибка при загрузке комментариев: ' + error.message);
         }
     }
 
-    renderComments(comments, level = 0) {
-        const list = document.getElementById('commentsList');
+    renderComments() {
+        const container = document.getElementById('commentsContainer');
+        if (!container) return;
         
-        if (comments.length === 0) {
-            list.innerHTML = `
-                <div class="loading">
-                    <i class="fas fa-comments" style="font-size: 3rem; margin-bottom: 1rem; color: #bdc3c7;"></i>
-                    <p>Комментариев пока нет. Будьте первым!</p>
+        if (this.comments.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-comment-slash"></i>
+                    <h4>Комментариев пока нет</h4>
+                    <p>Будьте первым, кто оставит комментарий!</p>
                 </div>
             `;
             return;
         }
 
-        list.innerHTML = comments.map(comment => this.renderComment(comment, level)).join('');
+        container.innerHTML = this.comments.map(comment => this.renderCommentNode(comment, 0)).join('');
     }
 
-    renderComment(comment, level = 0) {
+    renderCommentNode(comment, level = 0) {
         const date = new Date(comment.created_at).toLocaleString('ru-RU');
         const levelClass = level > 0 ? `comment-level-${Math.min(level, 5)}` : '';
         
-        return `
-            <div class="comment ${levelClass} ${this.replyingTo === comment.id ? 'replying' : ''}" data-comment-id="${comment.id}">
+        let html = `
+            <div class="comment-node ${levelClass}" data-comment-id="${comment.id}">
                 <div class="comment-header">
                     <span class="comment-author">
                         <i class="fas fa-user"></i> ${this.escapeHtml(comment.author)}
@@ -229,33 +101,33 @@ class CommentsApp {
                 </div>
                 <div class="comment-content">${this.escapeHtml(comment.content)}</div>
                 <div class="comment-actions">
-                    <button class="btn btn-outline btn-sm" onclick="app.replyTo(${comment.id}, '${this.escapeHtml(comment.author)}')">
+                    <button class="btn btn-outline btn-xs reply-btn" 
+                            data-comment-id="${comment.id}" 
+                            data-author="${this.escapeHtml(comment.author)}">
                         <i class="fas fa-reply"></i> Ответить
                     </button>
-                    <button class="btn btn-danger btn-sm" onclick="app.showDeleteModal(${comment.id})">
+                    <button class="btn btn-danger btn-xs delete-btn" 
+                            data-comment-id="${comment.id}">
                         <i class="fas fa-trash"></i> Удалить
                     </button>
                 </div>
-                ${comment.children && comment.children.length > 0 ? 
-                    `<div class="comment-children">
-                        ${comment.children.map(child => this.renderComment(child, level + 1)).join('')}
-                    </div>` : ''
-                }
-            </div>
         `;
+
+        // Добавляем дочерние комментарии
+        if (comment.children && comment.children.length > 0) {
+            html += `<div class="comment-children">`;
+            html += comment.children.map(child => this.renderCommentNode(child, level + 1)).join('');
+            html += `</div>`;
+        }
+
+        html += `</div>`;
+        return html;
     }
 
-    async handleSubmit(e) {
-        e.preventDefault();
-        
-        if (!this.selectedPost) {
-            this.showError('Пожалуйста, выберите пост для комментария');
-            return;
-        }
-        
-        const author = document.getElementById('commentAuthor').value.trim();
-        const content = document.getElementById('commentContent').value.trim();
-        const parentId = document.getElementById('parentId').value;
+    async createComment() {
+        const author = document.getElementById('commentAuthor')?.value.trim();
+        const content = document.getElementById('commentContent')?.value.trim();
+        const parentId = document.getElementById('parentId')?.value;
 
         if (!author || !content) {
             this.showError('Пожалуйста, заполните все поля');
@@ -263,7 +135,6 @@ class CommentsApp {
         }
 
         const commentData = {
-            post_id: this.selectedPost.id,
             author: author,
             content: content,
             parent_id: parentId ? parseInt(parentId) : null
@@ -272,26 +143,20 @@ class CommentsApp {
         try {
             const response = await fetch('/comments', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(commentData)
             });
 
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || 'Ошибка при создании комментария');
-            }
+            if (!response.ok) throw new Error('Ошибка при создании комментария');
 
             this.showSuccess('Комментарий успешно добавлен!');
             
             // Очистка формы
-            document.getElementById('commentForm').reset();
+            document.getElementById('commentForm')?.reset();
             this.cancelReply();
             
-            // Перезагрузка комментариев и постов
-            this.loadComments();
-            this.loadPosts();
+            // Перезагрузка комментариев
+            await this.loadComments();
 
         } catch (error) {
             this.showError('Ошибка: ' + error.message);
@@ -301,24 +166,26 @@ class CommentsApp {
     replyTo(commentId, authorName) {
         this.replyingTo = commentId;
         document.getElementById('parentId').value = commentId;
-        document.getElementById('cancelReply').style.display = 'inline-block';
+        document.getElementById('replyInfo').style.display = 'block';
+        document.getElementById('replyAuthor').textContent = authorName;
         
         const contentInput = document.getElementById('commentContent');
         contentInput.placeholder = `Ответ ${authorName}...`;
         contentInput.focus();
-
-        // Прокрутка к форме
-        document.querySelector('.comment-form').scrollIntoView({ behavior: 'smooth' });
     }
 
     cancelReply() {
         this.replyingTo = null;
         document.getElementById('parentId').value = '';
-        document.getElementById('cancelReply').style.display = 'none';
+        document.getElementById('replyInfo').style.display = 'none';
         document.getElementById('commentContent').placeholder = 'Ваш комментарий...';
     }
 
     async deleteComment(commentId) {
+        if (!confirm('Вы уверены, что хотите удалить этот комментарий и все ответы на него?')) {
+            return;
+        }
+
         try {
             const response = await fetch(`/comments/${commentId}`, {
                 method: 'DELETE'
@@ -327,8 +194,7 @@ class CommentsApp {
             if (!response.ok) throw new Error('Ошибка при удалении комментария');
 
             this.showSuccess('Комментарий удален!');
-            this.loadComments();
-            this.loadPosts(); // Обновляем счетчик комментариев
+            await this.loadComments();
 
         } catch (error) {
             this.showError('Ошибка при удалении: ' + error.message);
@@ -336,7 +202,7 @@ class CommentsApp {
     }
 
     handleSearch() {
-        this.searchQuery = document.getElementById('searchInput').value.trim();
+        this.searchQuery = document.getElementById('searchInput')?.value.trim() || '';
         this.currentPage = 1;
         this.loadComments();
     }
@@ -349,8 +215,8 @@ class CommentsApp {
     }
 
     handleSortChange() {
-        this.sortBy = document.getElementById('sortBy').value;
-        this.sortOrder = document.getElementById('sortOrder').value;
+        this.sortBy = document.getElementById('sortBy')?.value || 'created_at';
+        this.sortOrder = document.getElementById('sortOrder')?.value || 'desc';
         this.currentPage = 1;
         this.loadComments();
     }
@@ -373,26 +239,23 @@ class CommentsApp {
         document.getElementById('pageInfo').textContent = `Страница ${data.page} из ${Math.ceil(data.total / data.page_size)}`;
     }
 
-    updateStats(total) {
-        const stats = document.getElementById('commentsStats');
-        stats.textContent = `Всего комментариев: ${total}`;
-    }
-
-    showDeleteModal(commentId) {
-        this.commentToDelete = commentId;
-        document.getElementById('deleteModal').style.display = 'flex';
-    }
-
-    hideDeleteModal() {
-        this.commentToDelete = null;
-        document.getElementById('deleteModal').style.display = 'none';
-    }
-
-    confirmDelete() {
-        if (this.commentToDelete) {
-            this.deleteComment(this.commentToDelete);
-            this.hideDeleteModal();
-        }
+    delegateEvents() {
+        // Обработка кликов на комментарии
+        document.getElementById('commentsContainer')?.addEventListener('click', (e) => {
+            const replyBtn = e.target.closest('.reply-btn');
+            const deleteBtn = e.target.closest('.delete-btn');
+            
+            if (replyBtn) {
+                const commentId = parseInt(replyBtn.dataset.commentId);
+                const authorName = replyBtn.dataset.author;
+                this.replyTo(commentId, authorName);
+            }
+            
+            if (deleteBtn) {
+                const commentId = parseInt(deleteBtn.dataset.commentId);
+                this.deleteComment(commentId);
+            }
+        });
     }
 
     showError(message) {
@@ -404,27 +267,23 @@ class CommentsApp {
     }
 
     showMessage(message, type) {
-        // Удаляем старые сообщения
-        const oldMessages = document.querySelectorAll('.error, .success');
-        oldMessages.forEach(msg => msg.remove());
-
         const messageEl = document.createElement('div');
         messageEl.className = type;
-        messageEl.textContent = message;
+        messageEl.innerHTML = `
+            <i class="fas fa-${type === 'error' ? 'exclamation-circle' : 'check-circle'}"></i>
+            ${this.escapeHtml(message)}
+        `;
 
-        // Вставляем сообщение в начало контейнера
         const container = document.querySelector('.container');
-        container.insertBefore(messageEl, container.firstChild);
-
-        // Автоудаление через 5 секунд
-        setTimeout(() => {
-            if (messageEl.parentNode) {
-                messageEl.remove();
-            }
-        }, 5000);
+        if (container) {
+            container.insertBefore(messageEl, container.firstChild);
+            
+            setTimeout(() => messageEl.remove(), 5000);
+        }
     }
 
     escapeHtml(unsafe) {
+        if (!unsafe) return '';
         return unsafe
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
@@ -434,5 +293,9 @@ class CommentsApp {
     }
 }
 
-// Инициализация приложения
-const app = new CommentsApp();
+// Инициализация
+document.addEventListener('DOMContentLoaded', () => {
+    const app = new CommentsApp();
+    app.delegateEvents();
+    window.app = app;
+});

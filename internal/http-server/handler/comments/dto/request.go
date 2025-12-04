@@ -5,14 +5,12 @@ import (
 )
 
 type CreateCommentRequest struct {
-	PostID   int    `json:"post_id" validate:"required,min=1"`
 	ParentID *int   `json:"parent_id,omitempty"`
 	Content  string `json:"content" validate:"required,min=1,max=1000"`
 	Author   string `json:"author" validate:"required,min=2,max=50"`
 }
 
 type GetCommentsRequest struct {
-	PostID    int    `query:"post_id" validate:"required,min=1"`
 	ParentID  *int   `query:"parent"`
 	Page      int    `query:"page"`
 	PageSize  int    `query:"page_size"`
@@ -21,7 +19,7 @@ type GetCommentsRequest struct {
 	SortOrder string `query:"sort_order"`
 }
 
-func (r *GetCommentsRequest) Bind() error {
+func (r *GetCommentsRequest) Validate() error {
 	if r.Page < 1 {
 		r.Page = 1
 	}
@@ -49,10 +47,6 @@ func (r *GetCommentsRequest) Bind() error {
 		r.SortOrder = "desc"
 	}
 
-	return nil
-}
-
-func (r *GetCommentsRequest) Validate() error {
 	validate := validator.New()
 	return validate.Struct(r)
 }

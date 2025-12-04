@@ -11,15 +11,9 @@ import (
 
 	"comments-system/internal/config"
 	comments_h "comments-system/internal/http-server/handler/comments"
-	posts_h "comments-system/internal/http-server/handler/posts"
-	"comments-system/internal/http-server/middleware"
 	"comments-system/internal/http-server/router"
-	comments_cache "comments-system/internal/repository/cache/comments/redis"
-	posts_cache "comments-system/internal/repository/cache/posts/redis"
 	comments_postgres "comments-system/internal/repository/comments/postgres"
-	posts_postgres "comments-system/internal/repository/posts/postgres"
 	comments_uc "comments-system/internal/usecase/comments"
-	posts_uc "comments-system/internal/usecase/posts"
 
 	"github.com/wb-go/wbf/dbpg"
 	"github.com/wb-go/wbf/zlog"
@@ -41,34 +35,29 @@ func NewApp(cfg *config.Config, logger *zlog.Zerolog) (*App, error) {
 		ConnMaxLifetime: cfg.DB.ConnMaxLifetime,
 	}
 
-	db, err := dbpg.New(cfg.DBDSN(), cfg.DB.Slaves, dbOpts)
+	db, err := dbpg.New(cfg.DBDSN(), []string{}, dbOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	commentsCache := comments_cache.NewCommentsCache(cfg, retries)
-	postsCache := posts_cache.NewPostsCache(cfg, retries)
-
+	// Инициализация репозитория
 	commentsRepo := comments_postgres.NewCommentsRepository(db, retries)
-	postsRepo := posts_postgres.NewPostsRepository(db, retries)
 
-	commentsUsecase := comments_uc.NewCommentsUsecase(commentsRepo, commentsCache, logger)
-	postsUsecase := posts_uc.NewPostsUsecase(postsRepo, postsCache, logger)
+	// Инициализация usecase
+	commentsUsecase := comments_uc.NewCommentsUsecase(commentsRepo, logger)
 
+	// Инициализация хендлера
 	commentsHandler := comments_h.NewCommentsHandler(commentsUsecase, logger)
-	postsHandler := posts_h.NewPostsHandler(postsUsecase, logger)
 
 	h := &router.Handler{
 		CommentsHandler: commentsHandler,
-		PostsHandler:    postsHandler,
 	}
 
 	mux := router.SetupRouter(h)
-	muxWM := middleware.LoggingMiddleware(mux)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.Server.Addr,
-		Handler:      muxWM,
+		Handler:      mux,
 		ReadTimeout:  cfg.Server.ReadTimeout,
 		WriteTimeout: cfg.Server.WriteTimeout,
 		IdleTimeout:  cfg.Server.IdleTimeout,

@@ -9,8 +9,7 @@ build:
 	go build -o bin/comments-system cmd/comments-system/main.go
 
 docker-up:
-	docker-compose up --build
-
+	docker-compose up -d
 docker-down:
 	docker-compose down
 
