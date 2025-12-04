@@ -54,29 +54,39 @@ func (u *CommentsUsecase) CreateComment(ctx context.Context, comment domain.Comm
 }
 
 func (u *CommentsUsecase) GetComments(ctx context.Context, parentID *int, page, pageSize int, searchQuery, sortBy, sortOrder string) (domain.CommentTree, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
 	if parentID != nil {
-		parent, err := u.repo.GetByID(ctx, *parentID)
+		exists, err := u.repo.Exists(ctx, *parentID)
 		if err != nil {
 			return domain.CommentTree{}, err
 		}
+		if !exists {
+			return domain.CommentTree{}, ErrCommentNotFound
+		}
+	}
+
+	comments, total, err := u.repo.GetTree(ctx, parentID, page, pageSize, searchQuery, sortBy, sortOrder)
+	if err != nil {
+		return domain.CommentTree{}, err
 	}
 
 	return domain.CommentTree{
 		Comments: comments,
-		Total:    totalCount,
+		Total:    total,
 		Page:     page,
 		PageSize: pageSize,
-		HasNext:  (page * pageSize) < totalCount,
+		HasNext:  (page * pageSize) < total,
 		HasPrev:  page > 1,
 	}, nil
-}
-
-func (u *CommentsUsecase) loadAndCacheSubtree(ctx context.Context, commentID int, comment *domain.Comment) {
-	childComments, err := u.repo.GetTree(ctx, commentID)
-	if err != nil {
-		u.logger.Warn().Err(err).Int("comment_id", commentID).Msg("Failed to get subtree")
-		return
-	}
 }
 
 func (u *CommentsUsecase) DeleteComment(ctx context.Context, id int) error {
@@ -90,11 +100,6 @@ func (u *CommentsUsecase) DeleteComment(ctx context.Context, id int) error {
 	}
 	if !exists {
 		return ErrCommentNotFound
-	}
-
-	comment, err := u.repo.GetByID(ctx, id)
-	if err != nil {
-		return err
 	}
 
 	err = u.repo.Delete(ctx, id)

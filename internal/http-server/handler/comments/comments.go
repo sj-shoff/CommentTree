@@ -10,6 +10,7 @@ import (
 
 	"comments-system/internal/domain"
 	"comments-system/internal/http-server/handler/comments/dto"
+	comments_usecase "comments-system/internal/usecase/comments"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
@@ -57,12 +58,19 @@ func (h *CommentsHandler) CreateComment(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		h.logger.Error().Err(err).Msg("Failed to create comment")
 
-		if err.Error() == "invalid parent ID: parent comment not found" {
+		if errors.Is(err, comments_usecase.ErrInvalidParentID) {
 			http.Error(w, "Parent comment not found", http.StatusBadRequest)
 			return
 		}
+		if errors.Is(err, comments_usecase.ErrContentRequired) ||
+			errors.Is(err, comments_usecase.ErrAuthorRequired) ||
+			errors.Is(err, comments_usecase.ErrContentTooLong) ||
+			errors.Is(err, comments_usecase.ErrAuthorTooLong) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -77,7 +85,9 @@ func (h *CommentsHandler) CreateComment(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		h.logger.Error().Err(err).Msg("Failed to encode response")
+	}
 }
 
 func (h *CommentsHandler) GetComments(w http.ResponseWriter, r *http.Request) {
@@ -118,14 +128,16 @@ func (h *CommentsHandler) GetComments(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	resp := dto.FromDomainCommentTree(tree)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		h.logger.Error().Err(err).Msg("Failed to encode response")
+	}
 }
 
 func (h *CommentsHandler) DeleteComment(w http.ResponseWriter, r *http.Request) {
@@ -148,8 +160,12 @@ func (h *CommentsHandler) DeleteComment(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "Comment not found", http.StatusNotFound)
 			return
 		}
+		if errors.Is(err, comments_usecase.ErrInvalidCommentID) {
+			http.Error(w, "Invalid comment ID", http.StatusBadRequest)
+			return
+		}
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 

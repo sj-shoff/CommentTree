@@ -40,13 +40,10 @@ func NewApp(cfg *config.Config, logger *zlog.Zerolog) (*App, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	// Инициализация репозитория
 	commentsRepo := comments_postgres.NewCommentsRepository(db, retries)
 
-	// Инициализация usecase
 	commentsUsecase := comments_uc.NewCommentsUsecase(commentsRepo, logger)
 
-	// Инициализация хендлера
 	commentsHandler := comments_h.NewCommentsHandler(commentsUsecase, logger)
 
 	h := &router.Handler{

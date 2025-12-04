@@ -5,74 +5,85 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Древовидные комментарии</title>
     <link rel="stylesheet" href="/static/css/style.css">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
     <div class="container">
         <header class="header">
             <h1><i class="fas fa-comments"></i> Древовидные комментарии</h1>
+            <p class="subtitle">Комментарии с неограниченной вложенностью</p>
         </header>
 
-        <!-- Форма создания комментария -->
-        <div class="comment-form-container">
-            <h3><i class="fas fa-edit"></i> Новый комментарий</h3>
-            <form id="commentForm">
-                <input type="hidden" id="parentId" value="">
-                <input type="text" id="commentAuthor" placeholder="Ваше имя" required maxlength="50">
-                <textarea id="commentContent" placeholder="Ваш комментарий..." required maxlength="1000"></textarea>
-                <div id="replyInfo" class="reply-info" style="display: none;">
-                    <i class="fas fa-reply"></i> Ответ пользователю <span id="replyAuthor"></span>
-                    <button type="button" class="btn btn-xs" onclick="app.cancelReply()">
-                        <i class="fas fa-times"></i> Отменить
+        <main>
+            <div class="search-section">
+                <div class="search-box">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchInput" placeholder="Введите текст для поиска комментариев...">
+                    <button id="searchBtn" class="btn btn-primary">
+                        <i class="fas fa-search"></i> Найти
+                    </button>
+                    <button id="clearSearchBtn" class="btn btn-secondary">
+                        <i class="fas fa-times"></i> Очистить
                     </button>
                 </div>
-                <button id="createCommentBtn" class="btn btn-primary">
-                    <i class="fas fa-paper-plane"></i> Отправить
-                </button>
-            </form>
-        </div>
+            </div>
 
-        <!-- Поиск и сортировка -->
-        <div class="controls">
-            <div class="search-box">
-                <input type="text" id="searchInput" placeholder="Поиск по комментариям...">
-                <button id="searchBtn" class="btn btn-outline">
-                    <i class="fas fa-search"></i> Найти
-                </button>
-                <button id="clearSearch" class="btn btn-outline">
-                    <i class="fas fa-times"></i> Сбросить
-                </button>
+            <div class="comment-form-section">
+                <h2><i class="fas fa-plus-circle"></i> Новый комментарий</h2>
+                <div class="comment-form">
+                    <div class="form-group">
+                        <input type="text" id="authorInput" placeholder="Ваше имя" maxlength="50">
+                        <div class="char-counter" id="authorCounter">0/50</div>
+                    </div>
+                    <div class="form-group">
+                        <textarea id="contentInput" placeholder="Текст комментария" rows="3" maxlength="1000"></textarea>
+                        <div class="char-counter" id="contentCounter">0/1000</div>
+                    </div>
+                    <div class="form-group">
+                        <input type="number" id="parentIdInput" placeholder="ID родительского комментария (необязательно)">
+                    </div>
+                    <button id="submitCommentBtn" class="btn btn-primary btn-block">
+                        <i class="fas fa-paper-plane"></i> Отправить комментарий
+                    </button>
+                </div>
             </div>
-            <div class="sort-controls">
-                <label>Сортировка:</label>
-                <select id="sortBy">
-                    <option value="created_at">По дате</option>
-                    <option value="updated_at">По обновлению</option>
-                    <option value="id">По ID</option>
-                </select>
-                <select id="sortOrder">
-                    <option value="desc">Новые сначала</option>
-                    <option value="asc">Старые сначала</option>
-                </select>
-            </div>
-        </div>
 
-        <!-- Дерево комментариев -->
-        <div class="comments-container">
-            <h3><i class="fas fa-comments"></i> Комментарии</h3>
-            <div id="commentsContainer" class="comments-tree">
-                <!-- Комментарии будут здесь -->
+            <div class="comments-section">
+                <div class="section-header">
+                    <h2><i class="fas fa-tree"></i> Комментарии</h2>
+                    <div class="pagination-info" id="paginationInfo"></div>
+                </div>
+                
+                <div class="comments-tree" id="commentsTree">
+                    <div class="loading" id="loading">
+                        <i class="fas fa-spinner fa-spin"></i> Загрузка комментариев...
+                    </div>
+                </div>
+
+                <div class="pagination" id="pagination">
+                    <button id="prevPageBtn" class="btn btn-secondary" disabled>
+                        <i class="fas fa-chevron-left"></i> Назад
+                    </button>
+                    <div class="page-info" id="pageInfo">Страница 1</div>
+                    <button id="nextPageBtn" class="btn btn-secondary" disabled>
+                        Вперед <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
             </div>
-            
-            <!-- Пагинация -->
-            <div class="pagination">
-                <button id="prevPage" class="btn btn-outline" disabled>
-                    <i class="fas fa-chevron-left"></i> Назад
-                </button>
-                <span id="pageInfo">Страница 1</span>
-                <button id="nextPage" class="btn btn-outline" disabled>
-                    Вперед <i class="fas fa-chevron-right"></i>
-                </button>
+        </main>
+
+        <footer class="footer">
+            <p>© 2025 CommentTree System</p>
+        </footer>
+    </div>
+
+    <div class="modal" id="deleteModal">
+        <div class="modal-content">
+            <h3><i class="fas fa-exclamation-triangle"></i> Подтверждение удаления</h3>
+            <p>Вы уверены, что хотите удалить этот комментарий? Все дочерние комментарии также будут удалены.</p>
+            <div class="modal-actions">
+                <button id="cancelDeleteBtn" class="btn btn-secondary">Отмена</button>
+                <button id="confirmDeleteBtn" class="btn btn-danger">Удалить</button>
             </div>
         </div>
     </div>

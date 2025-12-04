@@ -1,301 +1,430 @@
-class CommentsApp {
-    constructor() {
-        this.currentPage = 1;
-        this.pageSize = 10;
-        this.searchQuery = '';
-        this.sortBy = 'created_at';
-        this.sortOrder = 'desc';
-        this.replyingTo = null;
-        this.comments = [];
-        
-        this.init();
-    }
+const API_BASE_URL = '/api';
+const PAGE_SIZE = 10;
 
-    init() {
-        this.bindEvents();
-        this.loadComments();
-    }
+let state = {
+    currentPage: 1,
+    totalPages: 1,
+    totalComments: 0,
+    searchQuery: '',
+    currentSort: 'created_at',
+    currentSortOrder: 'desc',
+    selectedParentId: null,
+    commentToDelete: null
+};
 
-    bindEvents() {
-        // Создание комментария
-        document.getElementById('createCommentBtn')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            this.createComment();
-        });
+const elements = {
+    commentsTree: document.getElementById('commentsTree'),
+    searchInput: document.getElementById('searchInput'),
+    searchBtn: document.getElementById('searchBtn'),
+    clearSearchBtn: document.getElementById('clearSearchBtn'),
+    authorInput: document.getElementById('authorInput'),
+    contentInput: document.getElementById('contentInput'),
+    parentIdInput: document.getElementById('parentIdInput'),
+    submitCommentBtn: document.getElementById('submitCommentBtn'),
+    prevPageBtn: document.getElementById('prevPageBtn'),
+    nextPageBtn: document.getElementById('nextPageBtn'),
+    pageInfo: document.getElementById('pageInfo'),
+    paginationInfo: document.getElementById('paginationInfo'),
+    deleteModal: document.getElementById('deleteModal'),
+    confirmDeleteBtn: document.getElementById('confirmDeleteBtn'),
+    cancelDeleteBtn: document.getElementById('cancelDeleteBtn'),
+    authorCounter: document.getElementById('authorCounter'),
+    contentCounter: document.getElementById('contentCounter')
+};
 
-        // Поиск
-        document.getElementById('searchBtn')?.addEventListener('click', () => this.handleSearch());
-        document.getElementById('searchInput')?.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.handleSearch();
-        });
-        document.getElementById('clearSearch')?.addEventListener('click', () => this.clearSearch());
+function init() {
+    loadComments();
+    setupEventListeners();
+    setupCharCounters();
+}
 
-        // Сортировка
-        document.getElementById('sortBy')?.addEventListener('change', () => this.handleSortChange());
-        document.getElementById('sortOrder')?.addEventListener('change', () => this.handleSortChange());
+function setupCharCounters() {
+    elements.authorInput.addEventListener('input', (e) => {
+        elements.authorCounter.textContent = `${e.target.value.length}/50`;
+    });
+    
+    elements.contentInput.addEventListener('input', (e) => {
+        elements.contentCounter.textContent = `${e.target.value.length}/1000`;
+    });
+}
 
-        // Пагинация
-        document.getElementById('prevPage')?.addEventListener('click', () => this.prevPage());
-        document.getElementById('nextPage')?.addEventListener('click', () => this.nextPage());
-    }
-
-    async loadComments() {
-        const container = document.getElementById('commentsContainer');
-        if (!container) return;
-        
-        container.innerHTML = '<div class="loading">Загрузка комментариев...</div>';
-
-        try {
-            const params = new URLSearchParams({
-                page: this.currentPage,
-                page_size: this.pageSize,
-                search: this.searchQuery,
-                sort_by: this.sortBy,
-                sort_order: this.sortOrder
-            });
-
-            const response = await fetch(`/comments?${params}`);
-            if (!response.ok) throw new Error('Ошибка загрузки комментариев');
-            
-            const data = await response.json();
-            this.comments = data.comments || [];
-            this.renderComments();
-            this.updatePagination(data);
-            
-        } catch (error) {
-            this.showError('Ошибка при загрузке комментариев: ' + error.message);
+function setupEventListeners() {
+    elements.searchBtn.addEventListener('click', () => {
+        state.searchQuery = elements.searchInput.value.trim();
+        state.currentPage = 1;
+        loadComments();
+    });
+    
+    elements.searchInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            state.searchQuery = elements.searchInput.value.trim();
+            state.currentPage = 1;
+            loadComments();
         }
-    }
+    });
+    
+    elements.clearSearchBtn.addEventListener('click', () => {
+        elements.searchInput.value = '';
+        state.searchQuery = '';
+        state.currentPage = 1;
+        loadComments();
+    });
+    
+    elements.submitCommentBtn.addEventListener('click', submitComment);
+    
+    elements.prevPageBtn.addEventListener('click', () => {
+        if (state.currentPage > 1) {
+            state.currentPage--;
+            loadComments();
+        }
+    });
+    
+    elements.nextPageBtn.addEventListener('click', () => {
+        if (state.currentPage < state.totalPages) {
+            state.currentPage++;
+            loadComments();
+        }
+    });
+    
+    elements.confirmDeleteBtn.addEventListener('click', confirmDelete);
+    elements.cancelDeleteBtn.addEventListener('click', () => {
+        elements.deleteModal.style.display = 'none';
+        state.commentToDelete = null;
+    });
+    
+    window.addEventListener('click', (e) => {
+        if (e.target === elements.deleteModal) {
+            elements.deleteModal.style.display = 'none';
+            state.commentToDelete = null;
+        }
+    });
+}
 
-    renderComments() {
-        const container = document.getElementById('commentsContainer');
-        if (!container) return;
+async function loadComments() {
+    showLoading();
+    
+    const params = new URLSearchParams({
+        page: state.currentPage,
+        page_size: PAGE_SIZE,
+        sort_by: state.currentSort,
+        sort_order: state.currentSortOrder
+    });
+    
+    if (state.searchQuery) {
+        params.append('search', state.searchQuery);
+    }
+    
+    if (state.selectedParentId) {
+        params.append('parent', state.selectedParentId);
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/comments?${params}`);
         
-        if (this.comments.length === 0) {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-comment-slash"></i>
-                    <h4>Комментариев пока нет</h4>
-                    <p>Будьте первым, кто оставит комментарий!</p>
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        state.totalComments = data.total;
+        state.totalPages = Math.ceil(data.total / PAGE_SIZE);
+        
+        updatePagination();
+        renderComments(data.comments);
+        
+    } catch (error) {
+        console.error('Error loading comments:', error);
+        showError('Ошибка при загрузке комментариев');
+    }
+}
+
+function renderComments(comments) {
+    if (!comments || comments.length === 0) {
+        if (state.searchQuery) {
+            elements.commentsTree.innerHTML = `
+                <div class="no-comments">
+                    <i class="fas fa-search"></i>
+                    <p>Комментарии по запросу "${state.searchQuery}" не найдены</p>
                 </div>
             `;
-            return;
-        }
-
-        container.innerHTML = this.comments.map(comment => this.renderCommentNode(comment, 0)).join('');
-    }
-
-    renderCommentNode(comment, level = 0) {
-        const date = new Date(comment.created_at).toLocaleString('ru-RU');
-        const levelClass = level > 0 ? `comment-level-${Math.min(level, 5)}` : '';
-        
-        let html = `
-            <div class="comment-node ${levelClass}" data-comment-id="${comment.id}">
-                <div class="comment-header">
-                    <span class="comment-author">
-                        <i class="fas fa-user"></i> ${this.escapeHtml(comment.author)}
-                    </span>
-                    <span class="comment-date">
-                        <i class="far fa-clock"></i> ${date}
-                    </span>
+        } else {
+            elements.commentsTree.innerHTML = `
+                <div class="no-comments">
+                    <i class="fas fa-comment-slash"></i>
+                    <p>Комментариев пока нет. Будьте первым!</p>
                 </div>
-                <div class="comment-content">${this.escapeHtml(comment.content)}</div>
+            `;
+        }
+        return;
+    }
+    
+    let html = '';
+    
+    function renderComment(comment, level = 0) {
+        const indent = level * 40;
+        const date = new Date(comment.created_at).toLocaleString('ru-RU');
+        
+        html += `
+            <div class="comment" style="margin-left: ${indent}px" data-id="${comment.id}">
+                <div class="comment-header">
+                    <div class="comment-author">
+                        <i class="fas fa-user"></i> ${escapeHtml(comment.author)}
+                    </div>
+                    <div class="comment-meta">
+                        <span><i class="far fa-clock"></i> ${date}</span>
+                        <span><i class="fas fa-hashtag"></i> ID: ${comment.id}</span>
+                        ${comment.parent_id ? `<span><i class="fas fa-reply"></i> Ответ на #${comment.parent_id}</span>` : ''}
+                    </div>
+                </div>
+                <div class="comment-content">
+                    ${escapeHtml(comment.content)}
+                </div>
                 <div class="comment-actions">
-                    <button class="btn btn-outline btn-xs reply-btn" 
-                            data-comment-id="${comment.id}" 
-                            data-author="${this.escapeHtml(comment.author)}">
+                    <button class="comment-reply" onclick="replyToComment(${comment.id}, '${escapeHtml(comment.author)}')">
                         <i class="fas fa-reply"></i> Ответить
                     </button>
-                    <button class="btn btn-danger btn-xs delete-btn" 
-                            data-comment-id="${comment.id}">
+                    <button class="comment-delete" onclick="showDeleteModal(${comment.id})">
                         <i class="fas fa-trash"></i> Удалить
                     </button>
                 </div>
         `;
-
-        // Добавляем дочерние комментарии
-        if (comment.children && comment.children.length > 0) {
-            html += `<div class="comment-children">`;
-            html += comment.children.map(child => this.renderCommentNode(child, level + 1)).join('');
-            html += `</div>`;
-        }
-
-        html += `</div>`;
-        return html;
-    }
-
-    async createComment() {
-        const author = document.getElementById('commentAuthor')?.value.trim();
-        const content = document.getElementById('commentContent')?.value.trim();
-        const parentId = document.getElementById('parentId')?.value;
-
-        if (!author || !content) {
-            this.showError('Пожалуйста, заполните все поля');
-            return;
-        }
-
-        const commentData = {
-            author: author,
-            content: content,
-            parent_id: parentId ? parseInt(parentId) : null
-        };
-
-        try {
-            const response = await fetch('/comments', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(commentData)
-            });
-
-            if (!response.ok) throw new Error('Ошибка при создании комментария');
-
-            this.showSuccess('Комментарий успешно добавлен!');
-            
-            // Очистка формы
-            document.getElementById('commentForm')?.reset();
-            this.cancelReply();
-            
-            // Перезагрузка комментариев
-            await this.loadComments();
-
-        } catch (error) {
-            this.showError('Ошибка: ' + error.message);
-        }
-    }
-
-    replyTo(commentId, authorName) {
-        this.replyingTo = commentId;
-        document.getElementById('parentId').value = commentId;
-        document.getElementById('replyInfo').style.display = 'block';
-        document.getElementById('replyAuthor').textContent = authorName;
         
-        const contentInput = document.getElementById('commentContent');
-        contentInput.placeholder = `Ответ ${authorName}...`;
-        contentInput.focus();
-    }
-
-    cancelReply() {
-        this.replyingTo = null;
-        document.getElementById('parentId').value = '';
-        document.getElementById('replyInfo').style.display = 'none';
-        document.getElementById('commentContent').placeholder = 'Ваш комментарий...';
-    }
-
-    async deleteComment(commentId) {
-        if (!confirm('Вы уверены, что хотите удалить этот комментарий и все ответы на него?')) {
-            return;
+        if (comment.children && comment.children.length > 0) {
+            html += '<div class="comment-children">';
+            comment.children.forEach(child => renderComment(child, level + 1));
+            html += '</div>';
         }
-
-        try {
-            const response = await fetch(`/comments/${commentId}`, {
-                method: 'DELETE'
-            });
-
-            if (!response.ok) throw new Error('Ошибка при удалении комментария');
-
-            this.showSuccess('Комментарий удален!');
-            await this.loadComments();
-
-        } catch (error) {
-            this.showError('Ошибка при удалении: ' + error.message);
-        }
+        
+        html += '</div>';
     }
+    
+    comments.forEach(comment => renderComment(comment));
+    elements.commentsTree.innerHTML = html;
+}
 
-    handleSearch() {
-        this.searchQuery = document.getElementById('searchInput')?.value.trim() || '';
-        this.currentPage = 1;
-        this.loadComments();
+async function submitComment() {
+    const author = elements.authorInput.value.trim();
+    const content = elements.contentInput.value.trim();
+    const parentId = elements.parentIdInput.value.trim();
+    
+    if (!author || !content) {
+        showError('Пожалуйста, заполните все обязательные поля');
+        return;
     }
-
-    clearSearch() {
-        document.getElementById('searchInput').value = '';
-        this.searchQuery = '';
-        this.currentPage = 1;
-        this.loadComments();
+    
+    if (author.length > 50) {
+        showError('Имя не должно превышать 50 символов');
+        return;
     }
-
-    handleSortChange() {
-        this.sortBy = document.getElementById('sortBy')?.value || 'created_at';
-        this.sortOrder = document.getElementById('sortOrder')?.value || 'desc';
-        this.currentPage = 1;
-        this.loadComments();
+    
+    if (content.length > 1000) {
+        showError('Комментарий не должен превышать 1000 символов');
+        return;
     }
-
-    prevPage() {
-        if (this.currentPage > 1) {
-            this.currentPage--;
-            this.loadComments();
+    
+    const commentData = {
+        author: author,
+        content: content
+    };
+    
+    if (parentId) {
+        const parentIdNum = parseInt(parentId);
+        if (!isNaN(parentIdNum)) {
+            commentData.parent_id = parentIdNum;
         }
     }
-
-    nextPage() {
-        this.currentPage++;
-        this.loadComments();
-    }
-
-    updatePagination(data) {
-        document.getElementById('prevPage').disabled = !data.has_prev;
-        document.getElementById('nextPage').disabled = !data.has_next;
-        document.getElementById('pageInfo').textContent = `Страница ${data.page} из ${Math.ceil(data.total / data.page_size)}`;
-    }
-
-    delegateEvents() {
-        // Обработка кликов на комментарии
-        document.getElementById('commentsContainer')?.addEventListener('click', (e) => {
-            const replyBtn = e.target.closest('.reply-btn');
-            const deleteBtn = e.target.closest('.delete-btn');
-            
-            if (replyBtn) {
-                const commentId = parseInt(replyBtn.dataset.commentId);
-                const authorName = replyBtn.dataset.author;
-                this.replyTo(commentId, authorName);
-            }
-            
-            if (deleteBtn) {
-                const commentId = parseInt(deleteBtn.dataset.commentId);
-                this.deleteComment(commentId);
-            }
+    
+    try {
+        elements.submitCommentBtn.disabled = true;
+        elements.submitCommentBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Отправка...';
+        
+        const response = await fetch(`${API_BASE_URL}/comments`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(commentData)
         });
-    }
+        
+        if (!response.ok) {
+            let errorMessage = 'Ошибка при отправке комментария';
+            try {
+                const errorData = await response.text();
+                errorMessage = errorData || errorMessage;
+            } catch (e) {
 
-    showError(message) {
-        this.showMessage(message, 'error');
-    }
-
-    showSuccess(message) {
-        this.showMessage(message, 'success');
-    }
-
-    showMessage(message, type) {
-        const messageEl = document.createElement('div');
-        messageEl.className = type;
-        messageEl.innerHTML = `
-            <i class="fas fa-${type === 'error' ? 'exclamation-circle' : 'check-circle'}"></i>
-            ${this.escapeHtml(message)}
-        `;
-
-        const container = document.querySelector('.container');
-        if (container) {
-            container.insertBefore(messageEl, container.firstChild);
-            
-            setTimeout(() => messageEl.remove(), 5000);
+            }
+            throw new Error(errorMessage);
         }
-    }
-
-    escapeHtml(unsafe) {
-        if (!unsafe) return '';
-        return unsafe
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
+        
+        elements.authorInput.value = '';
+        elements.contentInput.value = '';
+        elements.parentIdInput.value = '';
+        elements.authorCounter.textContent = '0/50';
+        elements.contentCounter.textContent = '0/1000';
+        
+        state.selectedParentId = null;
+        
+        state.currentPage = 1;
+        await loadComments();
+        
+        showSuccess('Комментарий успешно добавлен!');
+        
+    } catch (error) {
+        console.error('Error submitting comment:', error);
+        showError(`Ошибка при отправке комментария: ${error.message}`);
+    } finally {
+        elements.submitCommentBtn.disabled = false;
+        elements.submitCommentBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Отправить комментарий';
     }
 }
 
-// Инициализация
-document.addEventListener('DOMContentLoaded', () => {
-    const app = new CommentsApp();
-    app.delegateEvents();
-    window.app = app;
-});
+function replyToComment(commentId, authorName) {
+    elements.parentIdInput.value = commentId;
+    elements.contentInput.focus();
+    elements.contentInput.placeholder = `Ответ ${authorName}...`;
+    
+    elements.contentInput.scrollIntoView({ behavior: 'smooth' });
+    
+    showSuccess(`Вы отвечаете на комментарий #${commentId}`);
+}
+
+function showDeleteModal(commentId) {
+    state.commentToDelete = commentId;
+    elements.deleteModal.style.display = 'flex';
+}
+
+async function confirmDelete() {
+    if (!state.commentToDelete) return;
+    
+    try {
+        elements.confirmDeleteBtn.disabled = true;
+        elements.confirmDeleteBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Удаление...';
+        
+        const response = await fetch(`${API_BASE_URL}/comments/${state.commentToDelete}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        elements.deleteModal.style.display = 'none';
+        
+        await loadComments();
+        
+        showSuccess('Комментарий успешно удален!');
+        
+    } catch (error) {
+        console.error('Error deleting comment:', error);
+        showError('Ошибка при удалении комментария');
+    } finally {
+        elements.confirmDeleteBtn.disabled = false;
+        elements.confirmDeleteBtn.innerHTML = 'Удалить';
+        state.commentToDelete = null;
+    }
+}
+
+function updatePagination() {
+    elements.prevPageBtn.disabled = state.currentPage <= 1;
+    elements.nextPageBtn.disabled = state.currentPage >= state.totalPages;
+    
+    elements.pageInfo.textContent = `Страница ${state.currentPage} из ${state.totalPages}`;
+    elements.paginationInfo.textContent = `Всего комментариев: ${state.totalComments}`;
+    
+    if (state.currentPage <= 1) {
+        elements.prevPageBtn.classList.add('disabled');
+    } else {
+        elements.prevPageBtn.classList.remove('disabled');
+    }
+    
+    if (state.currentPage >= state.totalPages) {
+        elements.nextPageBtn.classList.add('disabled');
+    } else {
+        elements.nextPageBtn.classList.remove('disabled');
+    }
+}
+
+function showLoading() {
+    elements.commentsTree.innerHTML = `
+        <div class="loading">
+            <i class="fas fa-spinner fa-spin"></i> Загрузка комментариев...
+        </div>
+    `;
+}
+
+function showError(message) {
+    elements.commentsTree.innerHTML = `
+        <div class="error">
+            <i class="fas fa-exclamation-circle"></i>
+            <p>${message}</p>
+            <button class="btn btn-secondary" onclick="loadComments()">
+                <i class="fas fa-redo"></i> Попробовать снова
+            </button>
+        </div>
+    `;
+}
+
+function showSuccess(message) {
+    document.querySelectorAll('.toast').forEach(toast => toast.remove());
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast success';
+    toast.innerHTML = `
+        <i class="fas fa-check-circle"></i>
+        <span>${escapeHtml(message)}</span>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    toast.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #2ecc71;
+        color: white;
+        padding: 15px 25px;
+        border-radius: 8px;
+        box-shadow: 0 4px 15px rgba(46, 204, 113, 0.3);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        z-index: 10000;
+        animation: slideIn 0.3s ease-out;
+    `;
+    
+    if (!document.querySelector('#toast-styles')) {
+        const style = document.createElement('style');
+        style.id = 'toast-styles';
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    setTimeout(() => {
+        toast.style.animation = 'slideOut 0.3s ease-out forwards';
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 300);
+    }, 3000);
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+document.addEventListener('DOMContentLoaded', init);
